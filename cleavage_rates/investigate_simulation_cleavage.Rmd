@@ -1,0 +1,118 @@
+---
+title: "investigate_simulate_cleavage"
+output: html_document
+date: "2023-11-17"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Some functions written by Athma
+```{r}
+# cleavage rate model
+sumsqequationsolve <- function(atts, txnrate){
+  # atts[1:5] are Dprimes
+  # atts[6:10] are Rprimes
+  D_prime = atts[1:3]
+  R_prime = atts[4:6]
+ # D_prime = atts[1]
+ # R_prime = atts[2]
+  hold.row <- c(NA, NA)
+  f <- function(h){ ((h*(1-2^(-D_prime[1]/(h*txnrate)))) - R_prime[1])^2  + 
+                    ((h*(1-2^(-D_prime[2]/(h*txnrate)))) - R_prime[2])^2 + 
+                    ((h*(1-2^(-D_prime[3]/(h*txnrate)))) - R_prime[3])^2} 
+                    
+                 #   +
+                  #  ((h*(1-2^(-D_prime[4]/(h*txnrate)))) - R_prime[4])^2 +
+                   # ((h*(1-2^(-D_prime[5]/(h*txnrate)))) - R_prime[5])^2 }
+  starth = 0
+  if(sum(is.na(R_prime))==3){ return(hold.row) } # ==3 & ==1 when only one label
+  try(fit.hold <- optim(starth, f))
+  try(hold.row <- c(fit.hold$par, fit.hold$value))
+  return(hold.row)
+}
+
+# Fragment and Read Function
+get_reads <- function(lengths, eta_val, insertsize)
+{
+  # Select a fragment from each transcript, size select, and return the starting position of the
+  # resulting reads relative to the length of the transcript
+  # Inputs:
+  #   lengths - the lengths of the transcript
+  #   eta_val - the eta value input to the Weibull distribution - lower bound insertsize
+  #   insertsize - a list of length two with the lower and upper bound for fragments - mean +- sd
+  # Outputs:
+  #   fragments - a data frame with the start positions of the filtered fragments and the index
+  #               of the transcript that it came from (columns: transcript, start)
+
+  # sample lengths from a weibull distribution for each transcript and transform them to the length
+  # of the transcripts
+  deltas = log10(lengths)
+  ns_minus_1 <- pmax(round(lengths/eta_val/gamma(1/deltas + 1)) - 1, 0)
+  xis = lapply(ns_minus_1, function(n) {diff(sort(c(runif(n), 0, 1)))})
+  xis_transformed = mapply(function(x, d) {x^(1/d)}, xis, deltas, SIMPLIFY = F)
+  delta_is = mapply(function(len, x_t) {round(len*x_t/sum(x_t))}, lengths, xis_transformed, SIMPLIFY = F)
+
+  # get all the start and end points of the fragments
+  starts = lapply(delta_is, function(d) {
+    if (length(d) > 1) {
+      c(sample(min(insertsize[1], d[1]), 1), cumsum(d[1:(length(d)-1)]))
+    } else{
+      sample(min(insertsize[1], d), 1)
+    }
+  })
+  ends = lapply(delta_is, function(d) {
+    if (length(d) > 1) {
+      c(cumsum(d[1:(length(d)-1)]), sum(d)-sample(min(insertsize[1], sum(d) - d[length(d)]), 1))
+    } else{
+      d
+    }
+  })
+
+  # convert to a data frame of fragments and associated transcritp index
+  #fragments = data.frame(transcript = rep(1:length(deltas), lengths(delta_is)),
+  fragments = data.frame(transcript = rep(1:length(deltas), unlist(lapply(delta_is, length))),
+                         start = unlist(starts),
+                         end = unlist(ends))
+  fragments$length = fragments$end - fragments$start
+
+  # Filter fragments by length and return
+  fragments = fragments[fragments$length >= insertsize[1] & fragments$length <= insertsize[2],]
+  return(fragments)
+}
+
+```
+
+Investigate the real function: simulate
+```{r}
+U_dist = 25
+RTR = 50
+labeling = 5
+half_life = 0.05
+expression_level = 100
+n_millions = 100
+transcription_rate =1.5
+mean_insert = 125
+sd_insert = 30
+U_dist = 1000*U_dist
+RTR = 1000*RTR
+transcription_rate = 1000*transcription_rate
+txndistance = U_dist + RTR
+end_sites = sample.int(txndistance + labeling*transcription_rate,
+                                  expression_level*n_millions*(txndistance/1000), replace = TRUE) 
+pastCS = which(end_sites > U_dist) # true or false of whether the transcripts have passed the end of the gene
+cleaved_pastCS = (runif(length(end_sites[pastCS]))>(2^(-(end_sites[pastCS]-U_dist)/(half_life*transcription_rate))))  #if the are past the gene end, they are possibly cleaved --> calculate the cleav probability and decide whether the transcripts should be cleaved or not.
+cleaved = rep(FALSE, length(end_sites))
+cleaved[pastCS] <- cleaved_pastCS  # true false, length equal to all the transcripts ---> whether it is cleaved?
+# divide into uncleaved and cleaved fractions
+uncleaved_lengths = pmin(end_sites[-which(cleaved)], U_dist+RTR)  # if a transcript is ruled as uncleaved, its endsite should be at most U_dist + RTR
+cleaved_mature_lengths = rep(U_dist, sum(cleaved))
+cleaved_RTR_lengths = pmin(end_sites[which(cleaved)], U_dist+RTR)-U_dist # the RTR of each cleaved transcript should be at least RTR
+rl = 50
+uncleaved_start_pos <- get_reads(uncleaved_lengths, (mean_insert-sd_insert), c((mean_insert-sd_insert), (mean_insert+sd_insert)))
+if (nrow(uncleaved_start_pos) >0){ uncleaved_start_pos$cleaved = "uncleaved" }
+cleaved_mature_start_pos <- get_reads(cleaved_mature_lengths, (mean_insert-sd_insert), c((mean_insert-sd_insert), (mean_insert+sd_insert)))
+if (nrow(cleaved_mature_start_pos) >0){ cleaved_mature_start_pos$cleaved = "cleaved_mature"}
+cleaved_RTR_start_pos <- get_reads(cleaved_RTR_lengths, (mean_insert-sd_insert), c((mean_insert-sd_insert), (mean_insert+sd_insert))) #assumption is that all transcript start at same position (0)
+if (nrow(cleaved_RTR_start_pos) >0){ cleaved_RTR_start_pos$cleaved = "cleaved_RTR"}
+```

@@ -1,0 +1,27 @@
+#!/bin/bash
+
+count_files() {
+  local parent_directory="$1"
+
+  # Find all directories starting with "5eUrates_"
+  local directories=("$parent_directory"/5eUrates_*/)
+
+  # Loop through the directories
+  for directory in "${directories[@]}"; do
+    # Check if the "mapped_reads" subdirectory exists
+    local mapped_reads_dir="$directory/mapped_reads"
+    if [ -d "$mapped_reads_dir" ]; then
+      # Count the number of files ending with "_GA.bam" in the "mapped_reads" subdirectory
+      local file_count=$(find "$mapped_reads_dir" -type f -name "*_TC.bam.bai" | wc -l)
+      
+      # Output the result
+      echo "Directory: $directory"
+      echo "File Count: $file_count"
+      echo
+    fi
+  done
+}
+
+# Call the function with the parent directory
+count_files "/path/to/parent/directory"
+

@@ -1,0 +1,6 @@
+feature,start,end,length,txrate,is_intron,intron_h,is_PAS,PAS_h,time
+exon_1,0,9000,9000,3.6,False,0,False,0,2.5
+exon_2,9000,18000,9000,1.2,False,0,False,0,7.5
+exon_3,18000,23000,5000,1.0,False,0,False,0,5.0
+PAS,23000,23001,1,1.0,False,0,True,5,0.001
+RTR,23001,28001,5000,1.0,False,0,False,0,5.0
